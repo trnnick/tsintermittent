@@ -1,0 +1,5 @@
+importFrom("grDevices", "gray", "rainbow")
+importFrom("graphics", "axis", "legend", "lines", "plot", "points", "polygon", "text")
+importFrom("stats", "filter", "optim", "rbinom", "rnbinom", "runif", "sd")
+import(MAPA,parallel)
+export(crost.ma,crost,idclass,simID,tsb,sexsm,imapa,crost.decomp,data.frc)

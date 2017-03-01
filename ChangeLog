@@ -1,0 +1,47 @@
+Version 1.9 (10 March 2016)
+  * Provide vectors of non-zero demand and intervals for crost.R and crost.ma.R.
+  * Change the variable name of demand rate in crost.ma.R to "cc"
+  
+Version 1.8 (23 September 2015)
+  * Added "auto" method in data.frc. This selected and uses Croston, SBA and SES automatically for each time series, based on PKa classification (idclass function). 
+  * Changed classification to PKa instead of PK with prespecified alpha for imapa. Note that data.frc with method="auto" and imapa with maximumAL=1 give the same results, but the data.frc is faster. Use imapa when temporal aggregation is desirable. 
+  * Added check on crost.decomp and idclass when input is a data frame.
+  * Added warning on functions that handle single time series when data frames with more that a single column are used as inputs.
+
+Version 1.7 (17 September 2015)
+  * Added function data.frc. This is a wrapper to forecast data frames with a single command.
+  * Added option to remove NA values in all forecasting methods. 
+  * simID now outputs different series as columns in a data frame. 
+
+Version 1.6 (17 February 2015)
+  * Added separate function crost.decomp for Croston decomposition.
+
+Version 1.5 (20 November 2014)
+  * Corrected optimisation error in crost.ma. 
+
+Version 1.4 (03 October 2014)
+  * Added more time series checks for crost and imapa functions. 
+  * Revised default maximumAL in imapa to be floor(number of observations/2).
+  * Changed default CV^2 in simID function to 0.5.
+
+Version 1.3 (04 August 2014)
+  * Corrected major optimisation bug - issue with opt.on in all crost, tsb and sexsm functions.
+  * Corrected bug in imapa function when maximumAL was very high.
+  * Corrected bugs in the legend of imapa function plots.
+  * Added option to optimise only initial values without parameters in crost, tsb and sexsm functions.
+  * Added init.opt option for imapa in the same way as it is for crost and tsb functions. This does not affect SES optimisation.
+  * Added option to use pre-fitted imapa models.
+
+Version 1.2 (16 July 2014)
+  * Introduced imapa function for intermittent demand series.
+  * Added MAPA package dependency for temporal aggregation functions.
+  * Added parallel package dependency for imapa parallelisation.
+
+Version 1.1 (03 July 2014)
+  * Added SES function (sexsm.R) with control over parameter & initialisation.
+  * Added URL in description.
+  * Renamed data and data2 to ts.data1 and ts.data2.
+  * Forced type input to lowercase.
+
+Version 1.0 (23 June 2014)
+  * First release.
