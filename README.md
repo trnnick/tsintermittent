@@ -7,7 +7,7 @@ Intermittent demand forecasting package for R (tsintermittent)
 Development repository for the tsintermittent package for R.
 Stable version can be found at: https://cran.r-project.org/web/packages/tstinermittent/index.html
 
-<img src="https://github.com/trnnick/tsintermittent/hex-tsintermittent.png" height="150"/>
+<img src="https://github.com/trnnick/tsintermittent/blob/62de9d6f269fead33b5c9ca8551a9a34c5c1c996/hex-tsintermittent.png" height="150"/>
 
 Functions and wrappers for producing intermittent demand forecasts for R. 
 
