@@ -23,7 +23,7 @@ crost.decomp <- function(data,init=c("naive","mean")){
   # Defaults
   init <- init[1]
   
-  if (class(data) == "data.frame"){
+  if (isa(data,"data.frame")){
     if (ncol(data)>1){
       warning("Data frame with more than one columns. Using only first one.")
     }
@@ -41,7 +41,11 @@ crost.decomp <- function(data,init=c("naive","mean")){
   nzd <- which(data != 0)               # Find location on non-zero demand
   k <- length(nzd)
   z <- data[nzd]                        # Demand
-  x <- c(nzd[1],nzd[2:k]-nzd[1:(k-1)])  # Intervals
+  if (k>1){
+    x <- c(nzd[1],nzd[2:k]-nzd[1:(k-1)])  # Intervals
+  } else {
+    x <- nzd
+  }
   
   # Initialise intervals
   if (!(is.numeric(init))){

@@ -37,13 +37,13 @@ idclass(data,type=c("PKa","SBC","KHa","KH","PK"),a.in=NULL,
 }
 \references{
 Classification schemes described in:
-F. Petropoulos and N. Kourentzes, 2015, Journal of Operational Research Society. \url{http://www.palgrave-journals.com/jors/journal/v66/n6/full/jors201462a.html}.
-\url{http://kourentzes.com/forecasting/2014/05/13/forecast-combinations-for-intermittent-demand/}
+F. Petropoulos and N. Kourentzes, 2015, Journal of Operational Research Society. \url{https://link.springer.com/article/10.1057/jors.2014.62}.
+\url{https://kourentzes.com/forecasting/2014/05/13/forecast-combinations-for-intermittent-demand/}
 
 Optimisation of the methods described in:
-N. Kourentzes, 2014, On intermittent demand model optimisation and selection, International Journal of Production Economics, 156: 180-190. \url{http://dx.doi.org/10.1016/j.ijpe.2014.06.007}.
+N. Kourentzes, 2014, On intermittent demand model optimisation and selection, International Journal of Production Economics, 156: 180-190. \doi{10.1016/j.ijpe.2014.06.007}.
 
-\url{http://kourentzes.com/forecasting/2014/06/11/on-intermittent-demand-model-optimisation-and-selection/}
+\url{https://kourentzes.com/forecasting/2014/06/11/on-intermittent-demand-model-optimisation-and-selection/}
 }
 \author{
 Nikolaos Kourentzes

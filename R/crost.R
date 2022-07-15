@@ -65,6 +65,7 @@ crost <- function(data,h=10,w=NULL,init=c("mean","naive"),nop=c(2,1),
   outplot <- outplot[1]
   opt.on <- opt.on[1]
   na.rm <- na.rm[1]
+  nop <- nop[1]
   if (!is.numeric(init)){
     init <- init[1]
   } else {
@@ -82,7 +83,7 @@ crost <- function(data,h=10,w=NULL,init=c("mean","naive"),nop=c(2,1),
   }
   
   # Prepare data
-  if (class(data)=="data.frame"){
+  if (isa(data,"data.frame")){
     if (ncol(data)>1){
       warning("Data frame with more than one columns. Using only first one.")
     }

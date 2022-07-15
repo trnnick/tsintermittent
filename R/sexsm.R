@@ -53,7 +53,7 @@ sexsm <- function(data,h=10,w=NULL,init=c("mean","naive"),cost=c("mar","msr","ma
   } 
 
   # Prepare data
-  if (class(data)=="data.frame"){
+  if (isa(data,"data.frame")){
     if (ncol(data)>1){
       warning("Data frame with more than one columns. Using only first one.")
     }

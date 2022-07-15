@@ -61,7 +61,7 @@ type <- toupper(type)
 outplot <- outplot[1]
 
 # Initialise
-if ((sum(dim(data)==1)>0 | is.vector(data)) && class(data)!="data.frame"){
+if ((sum(dim(data)==1)>0 | is.vector(data)) && !isa(data,"data.frame")){
   data <- matrix(data,nrow=length(data))
   N <- 1
   p <- NA

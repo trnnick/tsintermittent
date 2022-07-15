@@ -54,15 +54,15 @@ imapa(data,h=10,w=NULL,minimumAL=1,maximumAL=NULL,comb=c("mean","median"),
 }
 \references{
 Optimisation of the methods described in:
-F. Petropoulos and N. Kourentzes, 2015, Forecast Combinations for Intermittent Demand, Journal of Operational Research Society. \url{http://www.palgrave-journals.com/jors/journal/v66/n6/full/jors201462a.html}.
+F. Petropoulos and N. Kourentzes, 2015, Forecast Combinations for Intermittent Demand, Journal of Operational Research Society. \url{https://link.springer.com/article/10.1057/jors.2014.62}.
 
-\url{http://kourentzes.com/forecasting/2014/05/13/forecast-combinations-for-intermittent-demand/}
+\url{https://kourentzes.com/forecasting/2014/05/13/forecast-combinations-for-intermittent-demand/}
 }
 \note{Note on optimal model paramaters: This implementation of MAPA for intermittent demand data optimises smoothing parameters for all Croston's method, SBA and SES. Optimisation is based on:
 
-N. Kourentzes, 2014, On intermittent demand model optimisation and selection, International Journal of Production Economics, 156: 180-190. \url{http://dx.doi.org/10.1016/j.ijpe.2014.06.007}.
+N. Kourentzes, 2014, On intermittent demand model optimisation and selection, International Journal of Production Economics, 156: 180-190. \doi{10.1016/j.ijpe.2014.06.007}.
 
-\url{http://kourentzes.com/forecasting/2014/06/11/on-intermittent-demand-model-optimisation-and-selection/}
+\url{https://kourentzes.com/forecasting/2014/06/11/on-intermittent-demand-model-optimisation-and-selection/}
 
 Note on parallelisation: Option paral=2 incurs substantial overheads. For a single time series using no parallelisation seems to be as good. If imapa is to be applied on multiple series, then initialising the parallel cluster externally and using the option paral=1 is advised. 
 }

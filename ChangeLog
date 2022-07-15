@@ -1,3 +1,8 @@
+Version 1.10 (15 July 2022)
+  * Fixed checks on classes.
+  * Updated links.
+  * Fixed bug in crost.R and crost.ma.R when checking number of parameters to optimise. Bug did not cause issues before. 
+
 Version 1.9 (10 March 2016)
   * Provide vectors of non-zero demand and intervals for crost.R and crost.ma.R.
   * Change the variable name of demand rate in crost.ma.R to "cc"
