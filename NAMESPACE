@@ -1,5 +1,6 @@
 importFrom("grDevices", "gray", "rainbow")
 importFrom("graphics", "axis", "legend", "lines", "plot", "points", "polygon", "text")
 importFrom("stats", "filter", "optim", "rbinom", "rnbinom", "runif", "sd")
-import(MAPA,parallel)
+importFrom("parallel", "detectCores", "makeCluster", "clusterCall","clusterApplyLB","stopCluster")
+importFrom("MAPA", "tsaggr")
 export(crost.ma,crost,idclass,simID,tsb,sexsm,imapa,crost.decomp,data.frc)

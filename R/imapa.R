@@ -80,10 +80,10 @@ imapa <- function(data,h=10,w=NULL,minimumAL=1,maximumAL=NULL,comb=c("mean","med
   
   # Setup parallel processing if required
   if (paral == 2){
-    crs <- detectCores()
-    cl <- makeCluster(getOption("cl.cores", crs))
+    crs <- parallel::detectCores()
+    cl <- parallel::makeCluster(getOption("cl.cores", crs))
     writeLines(paste("Running with", crs, 'cores'))
-    invisible(clusterCall(cl, function(pkgs) {
+    invisible(parallel::clusterCall(cl, function(pkgs) {
       require(tsintermittent)
     }))
   }
@@ -112,7 +112,7 @@ imapa <- function(data,h=10,w=NULL,minimumAL=1,maximumAL=NULL,comb=c("mean","med
   }
   
   # Aggregate time series
-  yaggr <- tsaggr(data,minimumAL:maximumAL)
+  yaggr <- MAPA::tsaggr(data,minimumAL:maximumAL)
   
   # Model each aggregation level
   k <- length(yaggr$out)
@@ -123,7 +123,7 @@ imapa <- function(data,h=10,w=NULL,minimumAL=1,maximumAL=NULL,comb=c("mean","med
   
   # Forecast calculation
   if (paral != 0){  # Parallel run
-    Fc_par <- clusterApplyLB(cl, 1:k, imapa.loop, yaggr=yaggr, minimumAL=minimumAL, w=w, 
+    Fc_par <- parallel::clusterApplyLB(cl, 1:k, imapa.loop, yaggr=yaggr, minimumAL=minimumAL, w=w, 
                              w.in=w.in, init.opt, n=n, h=h, model.fit=model.fit)
   } else {          # Serial run
     Fc_par <- vector("list", k)
@@ -141,7 +141,7 @@ imapa <- function(data,h=10,w=NULL,minimumAL=1,maximumAL=NULL,comb=c("mean","med
   
   if (paral == 2){
     # Stop parallel processing
-    stopCluster(cl)
+    parallel::stopCluster(cl)
   }
   
   # Combine forecasts
