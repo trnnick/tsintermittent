@@ -1,69 +1,112 @@
-sexsm <- function(data,h=10,w=NULL,init=c("mean","naive"),cost=c("mar","msr","mae","mse"),
+#' Simple exponential smoothing
+#'
+#' @description Simple exponential smoothing (SES) with fixed or optimised smoothing
+#' parameter and initial value, using the cost functions of the package.
+#'
+#' @inheritParams crost
+#' @param w Smoothing parameter. If \code{w == NULL} then the parameter is optimised.
+#' @param init Initial value. This can be:
+#'   \itemize{
+#'   \item a numeric value for the initial level;
+#'   \item \code{"naive"}: the initial level is the first observation;
+#'   \item \code{"mean"}: the initial level is the mean of the series.
+#'   }
+#'   If \code{init.opt == TRUE}, this is the starting value of the optimisation.
+#'
+#' @details SES makes no special treatment of periods with zero demand. It is a common
+#'   benchmark for intermittent demand, and it is used by \code{\link{imapa}} at
+#'   aggregation levels without zero demand. Its forecast is constant over the horizon.
+#'   The cost functions MAR and MSR were designed for methods that forecast a demand
+#'   rate, such as Croston's method and its variants, so their benefits may not carry
+#'   over to SES.
+#'
+#'   Unlike \code{\link{crost}} and \code{\link{tsb}}, the initial value of SES is the
+#'   forecast for the first period, so \code{frc.in} has no missing values.
+#'
+#' @inheritSection crost Cost functions
+#' @inheritSection crost Lead time quantiles
+#' @inheritSection crost Reusing a fitted model
+#'
+#' @return An object of class \code{tsint}, which is a list containing:
+#' \item{model}{Type of model fitted.}
+#' \item{frc.in}{In-sample demand.}
+#' \item{frc.out}{Out-of-sample demand.}
+#' \item{alpha}{Smoothing parameter.}
+#' \item{initial}{Initialisation value.}
+#' \item{lt}{Only when \code{probs} is provided. See \code{\link{crost}}.}
+#' \item{fit.info}{Information used by the methods of the object, such as the series,
+#'   the forecast from the end of the sample, and the cost function. Not intended for
+#'   direct use.}
+#' The object can be used with \code{print}, \code{summary}, \code{plot}, \code{coef},
+#' \code{fitted}, and \code{forecast}.
+#'
+#' @references
+#' The references for the cost functions and the lead time quantiles are given in
+#' \code{\link{crost}}.
+#'
+#' Kourentzes, N. (2014). On intermittent demand model optimisation and selection.
+#' \emph{International Journal of Production Economics}, 156, 180--190.
+#' \doi{10.1016/j.ijpe.2014.06.007}
+#'
+#' @author Nikolaos Kourentzes, \email{nikolaos@@kourentzes.com}
+#'
+#' @seealso \code{\link{crost}}, \code{\link{tsb}}, \code{\link{plot.tsint}}.
+#'
+#' @examples
+#' # SES with optimised parameter and initial value
+#' fit <- sexsm(ts.data1, outplot=TRUE)
+#' fit$alpha
+#'
+#' # Conventional cost function
+#' sexsm(ts.data1, cost="mse")$alpha
+#'
+#' # Fixed parameter and initial value
+#' sexsm(ts.data1, w=0.1, init="mean", init.opt=FALSE)$frc.out
+#'
+#' # Reuse the fitted model on an updated series
+#' fit <- sexsm(window(ts.data1, end=c(1985,12)))
+#' sexsm(ts.data1, model=fit)$frc.out
+#'
+#' # Quantiles of the demand over a lead time of 3 periods
+#' sexsm(ts.data1, h=3, probs=0.95)$lt
+#'
+#' @export sexsm
+sexsm <- function(data,h=10,w=NULL,init=c("mean","naive"),
+                  cost=c("mar","msr","mae","mse","msce","mace"),
                   init.opt=c(TRUE,FALSE),outplot=c(FALSE,TRUE),opt.on=c(FALSE,TRUE),
-                  na.rm=c(FALSE,TRUE)){
-# Simple Exponential Smoothing
-#
-# Inputs:
-#   data        Intermittent demand time series.
-#   h           Forecast horizon.
-#   w           Smoothing parameter. If w == NULL then parameter is optimised.
-#   init        Initial values for demand and intervals. This can be:
-#                 x       - Numeric value for the initial level;
-#                 "naive" - Initial value is a naive forecast;
-#                 "mean"  - Initial value is equal to the average of data.
-#   cost        Cost function used for optimisation
-#                 "mar" - Mean absolute rate
-#                 "msr" - Mean squared rate
-#                 "mae" - Mean absolute error
-#                 "mse" - Mean squared error
-#   init.opt    If init.opt==TRUE then initial values are optimised. 
-#   outplot     If TRUE a plot of the forecast is provided.
-#   opt.on      This is meant to use only by the optimisation function. When opt.on is 
-#               TRUE then no checks on inputs are performed. 
-#   na.rm       A logical value indicating whether NA values should be remove using the method.
-#
-# Outputs:
-#   model       Type of model fitted.
-#   frc.in      In-sample demand. 
-#   frc.out     Out-of-sample demand.
-#   alpha       Smoothing parameter.
-#   initial     Initialisation value.
-#
-# Example:
-#   sexsm(ts.data1,outplot=TRUE)
-#
-# Notes:
-# Optimisation of the method described in:
-# N. Kourentzes, 2014, On intermittent demand model optimisation and selection, 
-# International Journal of Production Economics, 156: 180-190. 
-# http://dx.doi.org/10.1016/j.ijpe.2014.06.007
-# http://kourentzes.com/forecasting/2014/06/11/on-intermittent-demand-model-optimisation-and-selection/
-#
-# Nikolaos Kourentzes, 2014 <nikolaos@kourentzes.com>
-  
+                  na.rm=c(FALSE,TRUE),probs=NULL,qtype=7,model=NULL){
+
+  # Reuse a fitted model
+  if (!is.null(model)){
+    model <- id.model(model,"sexsm")
+    w <- model$alpha
+    init <- model$initial
+    cost <- model$fit.info$cost
+    if (missing(init.opt)){
+      init.opt <- FALSE
+    }
+  }
+
   # Defaults
+  h <- id.h(h)
   w <- w[1]
-  cost <- tolower(cost[1])
+  cost <- id.match(cost,c("mar","msr","mae","mse","msce","mace"),"cost")
   init.opt <- init.opt[1]
-  outplot <- outplot[1]
+  outplot <- id.outplot(outplot)
   opt.on <- opt.on[1]
   na.rm <- na.rm[1]
+  probs <- id.probs(probs,h)
   if (!is.numeric(init)){
+    init <- id.match(init,c("mean","naive"),"init")
+  } else {
     init <- init[1]
-  } 
+  }
 
   # Prepare data
-  if (isa(data,"data.frame")){
-    if (ncol(data)>1){
-      warning("Data frame with more than one columns. Using only first one.")
-    }
-    data <- data[[1]]
-  }
-  if (na.rm == TRUE){
-    data <- data[!is.na(data)]
-  }  
+  prep <- id.prep(data,na.rm)
+  data <- prep$y
   n <- length(data)
-  
+
   # Initialise
   if (!is.numeric(init)){
     if (init=="mean"){
@@ -72,138 +115,111 @@ sexsm <- function(data,h=10,w=NULL,init=c("mean","naive"),cost=c("mar","msr","ma
       init <- data[1]
     }
   }
-  
+
   # Optimise parameters if requested
+  w.opt <- is.null(w)
   if (opt.on == FALSE){
     if (is.null(w) || init.opt == TRUE){
-      wopt <- sexsm.opt(data,cost,w,init,init.opt)
+      if (cost %in% c("msce","mace") && h<1){
+        stop("Cost functions msce and mace need h of at least 1.")
+      }
+      wopt <- sexsm.opt(data,cost,w,init,init.opt,h)
       w <- wopt$w
       init <- wopt$init
     }
   }
-  
+
+  # Fit model
+  fit <- sexsm.fit(data,w,init)
+
+  # Forecast out-of-sample demand rate
+  if (h>0){
+    frc.out <- rep(fit$fit[n+1],h)
+  } else {
+    frc.out <- NULL
+  }
+
+  out <- list(model="sexsm",frc.in=fit$frc.in,frc.out=frc.out,
+              alpha=w,initial=init)
+
+  # Finalise output: lead time quantiles, class, and plot
+  out <- id.finalise(out,"sexsm",fit$fit[n+1],data,prep$tsp,h,cost,probs,qtype,
+                     opt=c(w=w.opt && !opt.on,init=init.opt && !opt.on),outplot=outplot)
+
+  return(out)
+
+}
+
+#-------------------------------------------------
+sexsm.fit <- function(data,w,init){
+# Fit SES with given parameter - internal function
+#
+# Outputs:
+#   frc.in      In-sample forecast.
+#   fit         Level after each period, starting from the initial value. The last
+#               one is the forecast.
+
+  n <- length(data)
+
   # Pre-allocate memory
   fit <- vector("numeric",n+1)
-  
-  # Assign initial values and parameters
   fit[1] <- init[1]
-  
+
   # Fit model
   for (i in 2:(n+1)){
     fit[i] <- w*data[i-1] + (1-w)*fit[i-1]
   }
-  
-  # Calculate in-sample demand rate
-  frc.in <- fit[1:n]
-  
-  # Forecast out-of-sample demand rate
-  if (h>0){
-    frc.out <- rep(fit[n+1],h)
-  } else {
-    frc.out = NULL
-  }
-  
-  # Plot
-  if (outplot==TRUE){
-    plot(1:n,data,type="l",xlim=c(1,(n+h)),xlab="Period",ylab="",
-         xaxs="i",yaxs="i",ylim=c(0,max(data)*1.1))
-    lines(which(data>0),data[data>0],type="p",pch=20)
-    lines(1:n,frc.in,col="red")
-    lines((n+1):(n+h),frc.out,col="red",lwd=2)
-  }
-  
-  return(list(model="sexsm",frc.in=frc.in,frc.out=frc.out,
-              alpha=w,initial=init))
+
+  return(list(frc.in=fit[1:n],fit=fit))
 
 }
 
 #-------------------------------------------------
-sexsm.opt <- function(data,cost=c("mar","msr","mae","mse"),w=NULL,
-                      init,init.opt=c(TRUE,FALSE)){
-# Optimisation function for SES
-  
-  cost <- cost[1]
-  init.opt <- init.opt[1]  
-  
-  if (is.null(w) == TRUE && init.opt == TRUE){
-    # Optimise w and init
-    p0 <- c(0.5,init[1])
-    lbound <- c(0,0)
-    ubound <- c(1,max(data))
-    wopt <- optim(par=p0,sexsm.cost,data=data,cost=cost,w=w,w.opt=is.null(w),init=init,
-                  init.opt=init.opt,lbound=lbound,ubound=ubound,method="Nelder-Mead",
-                  control=list(maxit = 2000))$par  
-  } else if (is.null(w) == TRUE && init.opt == FALSE){
-    # Optimise only w
-    p0 <- 0.5
-    lbound <- 0
-    ubound <- 1
-    wopt <- optim(par=p0,sexsm.cost,data=data,cost=cost,w=w,w.opt=is.null(w),init=init,
-                  init.opt=init.opt,lbound=lbound,ubound=ubound,method="Brent",
-                  lower=lbound,upper=ubound,control=list(maxit = 2000))$par   
-    wopt <- c(wopt,init)
-  } else if (is.null(w) == FALSE && init.opt == TRUE){
-    # Optimise only init
-    p0 <- init[1]
-    lbound <- 0
-    ubound <- max(data)
-    wopt <- optim(par=p0,sexsm.cost,data=data,cost=cost,w=w,w.opt=is.null(w),init=init,
-                  init.opt=init.opt,lbound=lbound,ubound=ubound,method="Brent",
-                  lower=lbound,upper=ubound,control=list(maxit = 2000))$par     
-    wopt <- c(w,wopt)
-  }
-  
-  return(list(w=wopt[1],init=wopt[2]))
-  
-}
+sexsm.opt <- function(data,cost,w=NULL,init,init.opt=TRUE,h=0){
+# Optimisation function for SES - internal function
 
-#-------------------------------------------------
-sexsm.cost <- function(p0,data,w,w.opt,cost,init,init.opt,lbound,ubound){
-# Cost functions for SES
-  
-  if (w.opt == TRUE && init.opt == TRUE){
-    frc.in <- sexsm(data=data,w=p0[1],h=0,init=p0[2],opt.on=TRUE)$frc.in
-  } else if (w.opt == TRUE && init.opt == FALSE){
-    frc.in <- sexsm(data=data,w=p0[1],h=0,init=init,opt.on=TRUE)$frc.in
-  } else if (w.opt == FALSE && init.opt == TRUE){
-    frc.in <- sexsm(data=data,w=w,h=0,init=p0[1],opt.on=TRUE)$frc.in
-  }
-  
-  if (cost == "mse"){
-    E <- data - frc.in  
-    E <- E[!is.na(E)]
-    E <- mean(E^2)
-  } else if(cost == "mae"){
-    E <- data - frc.in  
-    E <- E[!is.na(E)]
-    E <- mean(abs(E))
-  } else if(cost == "mar"){
-    n <- length(data)
-    temp <- cumsum(data)/(1:n)
-    n <- ceiling(0.3*n)
-    temp[1:n] <- temp[n]
-    E <- abs(frc.in - temp)
-    E <- E[!is.na(E)]
-    E <- sum(E)
-  } else if(cost == "msr"){
-    n <- length(data)
-    temp <- cumsum(data)/(1:n)
-    n <- ceiling(0.3*n)
-    temp[1:n] <- temp[n]
-    E <- (frc.in - temp)^2
-    E <- E[!is.na(E)]
-    E <- sum(E)    
-  }
-  
-  # Constrains
-  if (init.opt==TRUE){
-    for (i in 1:(1*w.opt+1*init.opt)){
-      if (!(p0[i]>=lbound[i]) | !(p0[i]<=ubound[i])){
+  w.opt <- is.null(w)
+
+  # Cost function of the vector of free parameters
+  fn <- function(p0,lbound,ubound){
+    if (w.opt == TRUE && init.opt == TRUE){
+      wp <- p0[1]
+      ip <- p0[2]
+    } else if (w.opt == TRUE){
+      wp <- p0[1]
+      ip <- init
+    } else {
+      wp <- w
+      ip <- p0[1]
+    }
+    E <- id.cost(data,sexsm.fit(data,wp,ip)$frc.in,cost,h)
+    if (init.opt == TRUE){
+      if (id.outbounds(p0,lbound,ubound)){
         E <- 9*10^99
       }
     }
+    return(E)
   }
-  
-  return(E)
-  
+
+  if (w.opt == TRUE && init.opt == TRUE){
+    # Optimise w and init
+    lbound <- c(0,0)
+    ubound <- c(1,max(data))
+    wopt <- id.optim(function(p){fn(p,lbound,ubound)},c(0.5,init[1]),lbound,ubound)
+  } else if (w.opt == TRUE && init.opt == FALSE){
+    # Optimise only w
+    lbound <- 0
+    ubound <- 1
+    wopt <- id.optim(function(p){fn(p,lbound,ubound)},0.5,lbound,ubound,brent=TRUE)
+    wopt <- c(wopt,init)
+  } else {
+    # Optimise only init
+    lbound <- 0
+    ubound <- max(data)
+    wopt <- id.optim(function(p){fn(p,lbound,ubound)},init[1],lbound,ubound,brent=TRUE)
+    wopt <- c(w,wopt)
+  }
+
+  return(list(w=wopt[1],init=wopt[2]))
+
 }

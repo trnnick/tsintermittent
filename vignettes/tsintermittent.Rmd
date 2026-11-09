@@ -1,0 +1,282 @@
+---
+title: "Intermittent demand forecasting with tsintermittent"
+author: "Nikolaos Kourentzes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Intermittent demand forecasting with tsintermittent}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4)
+library(tsintermittent)
+```
+
+## Introduction
+
+Intermittent demand time series record items that are requested infrequently, so that many periods have zero demand. Spare parts are the typical example, but the same pattern appears in many slow-moving items. Conventional forecasting methods, such as exponential smoothing, do not account for the zeros explicitly, and Croston (1972) proposed an alternative that has since been extended in several ways.
+
+The **tsintermittent** package provides Croston's method and its variants, the TSB method, simple exponential smoothing, Croston-style moving averages, the iMAPA temporal aggregation approach, and tools to classify intermittent series. A central feature of the package is that the parameters and initial values of all methods can be optimised for each time series, using cost functions designed for intermittent demand (Kourentzes, 2014). The package also provides empirical predictive distributions over the lead time.
+
+This vignette explains the logic behind these choices and shows how to use the main arguments. The example series `ts.data1` is a monthly intermittent demand series with 84 observations.
+
+```{r data}
+plot(ts.data1, ylab = "Demand")
+```
+
+## Forecasts as demand rates
+
+Croston's method separates an intermittent series into two series: the non-zero demand sizes $z_t$ and the intervals between them $x_t$. Each is smoothed with single exponential smoothing, but only in periods where demand occurs:
+
+$$\hat{z}_t = \hat{z}_{t-1} + \alpha_z (z_t - \hat{z}_{t-1}), \qquad \hat{x}_t = \hat{x}_{t-1} + \alpha_x (x_t - \hat{x}_{t-1}),$$
+
+and the forecast is their ratio, $\hat{y}_t = \hat{z}_t / \hat{x}_t$. In periods without demand the estimates stay unchanged. The forecast is the same for all future periods.
+
+It is important to interpret this forecast correctly. A forecast of 0.5 does not say that half a unit will be demanded next period. It says that, on average, one unit is demanded every two periods: it is a *demand rate*. The forecast is therefore not trying to track the demand in each period, which is zero in most periods and positive in a few, but the average demand per period. This view drives both how the package optimises the methods and how it provides predictive distributions.
+
+## Methods
+
+**Croston and its variants** are provided by `crost()`. Croston's original method is biased, and two corrections are available through the argument `type`: the Syntetos-Boylan approximation (`"sba"`), which multiplies the forecast by $(1 - \alpha_x/2)$, and the Shale-Boylan-Johnston correction (`"sbj"`), which multiplies it by $(1 - \alpha_x/(2 - \alpha_x))$.
+
+```{r crost}
+fit <- crost(ts.data1, type = "sba", outplot = TRUE)
+fit$weights   # Smoothing parameters for demand and intervals
+fit$initial   # Initial values for demand and intervals
+```
+
+**TSB**, provided by `tsb()`, replaces the intervals with the probability of demand $d_t$, which is 1 in periods with demand and 0 otherwise. The demand probability is updated in every period, while the demand size is updated only when demand occurs, and the forecast is $\hat{y}_t = \hat{d}_t \hat{z}_t$. Because the probability is updated every period, TSB reacts to a series that stops being demanded, which Croston's method cannot do. The first smoothing parameter is for the demand size and the second for the demand probability, and the optimiser keeps the latter no larger than the former, following Teunter et al. (2011).
+
+```{r tsb}
+fit.tsb <- tsb(ts.data1, outplot = TRUE)
+fit.tsb$weights
+```
+
+**Simple exponential smoothing**, provided by `sexsm()`, is a common benchmark. It makes no special treatment of zero demand.
+
+**Croston-style moving averages**, provided by `crost.ma()`, replace exponential smoothing with moving averages of the demand sizes and intervals. The orders of the moving averages play the role of the smoothing parameters.
+
+**iMAPA**, provided by `imapa()`, models the series at multiple temporal aggregation levels and combines the resulting forecasts. It is described in its own section below.
+
+```{r others}
+sexsm(ts.data1)$alpha
+crost.ma(ts.data1)$order
+```
+
+## Optimising the methods
+
+### What is optimised
+
+By default all methods optimise both their smoothing parameters and their initial values. The relevant arguments are:
+
+- `w`: the smoothing parameters. If `w = NULL` they are optimised. For `crost()`, a single value is used for both demand and intervals, and two values are used for demand and intervals respectively. For `tsb()` two values are always needed.
+- `nop`: when `crost()` optimises the parameters, `nop = 2` (the default) uses separate parameters for demand and intervals, while `nop = 1` uses a single one. There is no reason to expect the demand sizes and the intervals to change at the same rate, so separate parameters are recommended.
+- `init`: the initial values, either `"mean"`, `"naive"`, or a vector of two numbers. For `crost()` these are the initial demand and interval, and for `tsb()` the initial demand and demand probability.
+- `init.opt`: if `TRUE` (the default), the initial values are optimised, using `init` as the starting point.
+
+Optimising the initial values matters for intermittent series. Such series are often short and have few non-zero observations, and the smoothing parameters are typically low, so the initial values can affect the forecasts for a long time. Optimising them avoids relying on ad-hoc values.
+
+```{r optimisation-options}
+# Optimise everything (default)
+crost(ts.data1, type = "sba")$frc.out[1]
+
+# Single parameter for demand and intervals
+crost(ts.data1, type = "sba", nop = 1)$weights
+
+# Fixed parameters, optimised initial values
+crost(ts.data1, type = "sba", w = c(0.1, 0.05))$initial
+
+# Everything fixed
+crost(ts.data1, type = "sba", w = c(0.1, 0.05), init = c(5, 3), init.opt = FALSE)$frc.out[1]
+```
+
+### Cost functions
+
+Conventional exponential smoothing is optimised by minimising the squared or absolute one-step-ahead errors. For intermittent demand this is problematic. Most periods have zero demand, so an optimiser driven by period-by-period errors is pulled towards forecasts close to zero (Teunter and Duncan, 2009; Wallström and Segerstedt, 2010). More fundamentally, such errors compare a demand rate with the realised demand of each period, which are not of the same nature.
+
+The package instead offers cost functions that compare like with like. The **mean absolute rate** (MAR) and **mean squared rate** (MSR) compare the forecast demand rate with the observed demand rate up to each period, measured by the cumulative mean of the series (Kourentzes, 2014):
+
+$$r_t = \hat{y}_t - \frac{1}{t}\sum_{j=1}^{t} y_j, \qquad \text{MAR} = \sum_{t} |r_t|, \qquad \text{MSR} = \sum_{t} r_t^2.$$
+
+The cumulative mean is unreliable in the first periods, where it is based on few observations, so it is winsorised over the first 30% of the sample. Because the comparison is on rates, the timing of individual demands does not affect the cost, while both the size and the frequency of demand do.
+
+Two further cost functions measure the error over the forecast horizon $h$. The cumulative error from origin $t$ is
+
+$$e_t^{(h)} = \sum_{j=1}^{h} y_{t+j} - \sum_{j=1}^{h} \hat{y}_{t+j|t},$$
+
+and the **mean squared cumulative error** (MSCE) and **mean absolute cumulative error** (MACE) are the mean of $(e_t^{(h)})^2$ and of $|e_t^{(h)}|$ across all available origins. These are natural choices when the forecasts are used to decide stock over a lead time, as discussed in the next section, and they use the same cumulative errors that define the predictive distribution. All methods in the package produce a constant forecast over the horizon, so the cumulative forecast from origin $t$ is simply $h$ times the forecast made at $t$.
+
+Unlike the other cost functions, MSCE and MACE depend on the forecast horizon: **changing `h` changes the optimised parameters**. This is intended, but it is worth understanding what it implies. Svetunkov, Kourentzes, and Killick (2024) show that cost functions based on multiple steps ahead errors shrink the parameters of exponential smoothing models towards zero. The reason is that the variance of the multi-step errors grows with the smoothing parameters, so minimising those errors pulls the parameters down, more strongly the longer the horizon. Their analysis is for linear state space models, but the methods in this package are built on exponential smoothing and the same mechanism applies: a noisier demand rate forecast inflates the cumulative error over $h$ periods, so the optimiser favours smaller smoothing parameters as $h$ grows. 
+
+Some shrinkage is useful, as it makes the forecasts less reactive to noise, which suits intermittent demand. However, Svetunkov, Kourentzes, and Killick (2024) also show that the shrinkage can become excessive when the sample is short and the horizon is long. Intermittent demand series are often short, so MSCE and MACE should be used with lead times that are small relative to the length of the series.
+
+The conventional mean squared error (MSE) and mean absolute error (MAE) are also available for comparison. MAE is not recommended for intermittent demand, as it is particularly prone to favouring forecasts close to zero.
+
+The argument `cost` selects the cost function, with MAR as the default:
+
+```{r costs}
+sapply(c("mar", "msr", "mse", "mae"),
+       function(x){crost(ts.data1, type = "sba", cost = x)$weights})
+```
+
+```{r costs-cumulative}
+crost(ts.data1, h = 3, type = "sba", cost = "msce")$weights
+crost(ts.data1, h = 3, type = "sba", cost = "mace")$weights
+```
+
+## Predictive distributions over the lead time
+
+### Why over the lead time
+
+Since the forecasts are demand rates, a predictive distribution for the demand in a single period is not meaningful: the forecast does not say when demand will occur, only how much is demanded on average per period. What is meaningful, and what matters for stock control, is the total demand over the lead time. Over a lead time of $h$ periods the forecasts sum to the expected cumulative demand, which can be compared directly with the cumulative realised demand.
+
+The package therefore provides the predictive distribution of the cumulative demand over the forecast horizon, and when quantiles are requested **`h` is understood as the lead time**. More precisely, `h` should be the period the stock decision must cover. With continuous review this is the lead time. With periodic review it is the lead time plus the review period, often called the protection interval. For example, with monthly data, a lead time of two months, and monthly reviews, `h = 3`.
+
+### How it is calculated
+
+The distribution is empirical. For every in-sample origin $t$ the cumulative errors $e_t^{(h)}$ over the next $h$ periods are calculated, as in the definition above, using the forecasts made at origin $t$. The quantiles of these errors are added to the cumulative forecast from the end of the sample:
+
+$$Q_\tau = \sum_{j=1}^{h} \hat{y}_{n+j|n} + q_\tau\left(e^{(h)}\right),$$
+
+where $q_\tau$ is the empirical quantile at probability $\tau$. Since demand cannot be negative, quantiles are truncated at zero.
+
+Working with the cumulative errors directly matters. The forecast errors at different steps ahead are correlated, even when the model is correct, so the variance of the error over the lead time is not the one-step-ahead variance multiplied by the lead time, nor the sum of the variances at each step. Both shortcuts ignore the covariances between the errors and typically understate the uncertainty. The empirical distribution of the cumulative errors contains these covariances by construction, without assuming a model for the demand (Saoud, Kourentzes, and Boylan, 2022). The package takes this one step further and reads the quantiles directly from that distribution, so no distribution needs to be assumed for the errors either.
+
+Any probability can be requested, but quantiles below the median are of little use here. They give a negative safety stock, that is, stock below the expected demand over the lead time, and they describe the lower tail of the cumulative demand, which is not what stock control is concerned with.
+
+The two parts of $Q_\tau$ map directly onto stock control. $Q_\tau$ is the stock needed to cover the demand over the lead time with probability $\tau$: the order-up-to level under periodic review, or the reorder point under continuous review. The error quantile $q_\tau(e^{(h)})$ is the safety stock, the stock held on top of the expected demand over the lead time. Both are reported.
+
+Quantiles are calculated only when the argument `probs` is given, for example `probs = c(0.9, 0.95)`. The output then contains the cumulative forecast, the quantiles, the safety stock, and the cumulative errors used to calculate them.
+
+```{r lt}
+fit <- crost(ts.data1, h = 3, type = "sba", probs = c(0.9, 0.95))
+fit$lt$frc        # Cumulative forecast over the lead time
+fit$lt$quantile   # Quantiles of the cumulative demand over the lead time
+fit$lt$ss         # Safety stock for each probability
+summary(fit)
+```
+
+The empirical quantiles are only as reliable as the number of errors behind them. A series of 24 periods with a lead time of 5 provides fewer than 20 overlapping cumulative errors, and an empirical 95% quantile from so few is close to the maximum observed error. The package warns when the sample is too small for the requested probabilities. This is the price of the empirical approach: it needs more data than approximations built on the one-step-ahead errors (Saoud, Kourentzes, and Boylan, 2022).
+
+### Plotting the forecasts
+
+When quantiles are available there are two ways to view the forecasts.
+
+The **per-period view** shows the series, the in-sample and out-of-sample demand rate, and each lead-time quantile divided by the lead time, spread over the forecast horizon. This is a convenient way to place the quantile next to the forecast, but it is not a per-period quantile.
+
+The **lead-time view** shows the rolling cumulative demand over windows of $h$ periods, the corresponding cumulative forecasts made at the start of each window, and the cumulative forecast and quantiles for the next $h$ periods. This is the view in which the distribution is defined.
+
+Either view can be drawn when the model is fitted, through `outplot`. `outplot = TRUE` draws the per-period view, and `outplot = "period"` or `outplot = "leadtime"` selects a view explicitly. The same views are available afterwards with `plot()`, which also accepts graphical arguments such as `main` or `ylim`:
+
+```{r lt-plot}
+fit <- crost(ts.data1, h = 3, type = "sba", probs = c(0.9, 0.95), outplot = "leadtime")
+plot(fit)                     # Per-period view
+plot(fit, view = "leadtime")  # Lead-time view
+plot(fit, view = "leadtime", main = "Demand over a 3-month lead time")
+```
+
+## Reusing fitted models
+
+A fitted model can produce forecasts and lead time quantiles for any horizon without optimising it again. `forecast()` gives the point forecasts, the expected demand per period, for any `h`. It deliberately gives no prediction intervals, since a per-period interval would be misleading for demand rates. The quantiles of the demand over the lead time, for any lead time and probabilities, are given by `lt.dist()`, which uses the series and in-sample forecasts stored in the fitted model:
+
+```{r reuse}
+fit <- crost(ts.data1, type = "sba")
+forecast(fit, h = 6)
+lt.dist(fit, h = 3, probs = c(0.9, 0.95))$quantile
+```
+
+The parameters of a model optimised with MSCE or MACE depend on the horizon used when fitting it, and they are not reoptimised for a new `h`.
+
+A fitted model can also be applied to new data, for example when new observations become available, with the input `model` of the forecasting functions, or `model.fit` for iMAPA. The smoothing parameters and the initial values of the model are used without optimisation. This is appropriate when the new data extend the series the model was fitted to, as both start at the same period. To use the smoothing parameters of a model on a different series, set `init.opt = TRUE`, so that only the initial values are optimised.
+
+```{r reuse-new}
+fit <- crost(window(ts.data1, end = c(1985, 12)), type = "sba")
+crost(ts.data1, model = fit)$frc.out[1]
+forecast(fit, h = 3, newdata = ts.data1)
+crost(ts.data2, model = fit, init.opt = TRUE)$initial
+```
+
+## Classifying series
+
+The function `idclass()` classifies series according to their average inter-demand interval $p$ and the squared coefficient of variation of their non-zero demands $CV^2$. Several schemes are available through `type`: the Syntetos-Boylan-Croston classification (`"SBC"`), the Kostenko-Hyndman classification (`"KH"` and its approximation `"KHa"`), and the Petropoulos-Kourentzes classification (`"PK"` and its approximation `"PKa"`). The latter extends the Kostenko-Hyndman classification for series without any zero demand, $p = 1$, which are assigned to SES instead of Croston or SBA (Petropoulos and Kourentzes, 2015). Such series are rare at the original frequency, but common once a series is temporally aggregated, which is why this classification is used by iMAPA. The exact schemes optimise SBA for each series, so they are slower.
+
+```{r idclass}
+set.seed(1)
+dataset <- cbind(simID(20, 60, idi = 1.05, cv2 = 0.1),
+                 simID(20, 60, idi = 1.20, cv2 = 0.1),
+                 simID(20, 60, idi = 2.00, cv2 = 0.8))
+colnames(dataset) <- paste0("ts", 1:60)
+cls <- idclass(dataset, type = "PKa", outplot = "summary")
+cls$summary
+cls.sbc <- idclass(dataset, type = "SBC", outplot = "detail")
+```
+
+## Temporal aggregation and iMAPA
+
+Temporal aggregation sums an intermittent series into non-overlapping buckets of several periods, for example from monthly to quarterly demand. At higher aggregation levels there are fewer zeros, the intervals between demands shrink, and the variability of the demand sizes changes, so the series becomes easier to forecast. A single aggregation level must be chosen, though, and the best level differs between series and is not known in advance.
+
+iMAPA avoids this choice by using many aggregation levels at once (Petropoulos and Kourentzes, 2015). For each aggregation level from `minimumAL` to `maximumAL` it:
+
+1. aggregates the series, dropping the first observations where needed so that all buckets are complete;
+2. classifies the aggregated series with the PKa scheme and fits Croston, SBA, or SES accordingly, so that the method can change with the aggregation level;
+3. forecasts the aggregated series and divides the forecast equally over the periods of each bucket, returning it to the original frequency.
+
+The forecasts from all levels are then combined, with the mean or the median as set by `comb`. Aggregation levels with fewer than four observations, or fewer than two non-zero demands, are skipped. Because the methods selected at the higher levels see a series with less intermittency, this combines model selection with the benefits of aggregation without requiring the user to choose either. The maximum aggregation level still matters: very high levels leave few observations and over-smooth the series. By default it is half the length of the series.
+
+The argument `outplot` gives four views of the results, numbered as in earlier versions of the package, plus the lead time view described above. All are also available with `plot()`:
+
+```{r imapa}
+fit <- imapa(ts.data1, outplot = 1)   # Series and combined forecast
+plot(fit, view = "levels")            # Forecasts from each aggregation level
+plot(fit, view = "selection")         # Summary of the methods selected
+plot(fit, view = "selection.detail")  # Classification per level
+summary(fit)                          # Characteristics and method per level
+```
+
+The fitted models can be reused with `model.fit`, which skips the classification and optimisation:
+
+```{r imapa-refit}
+imapa(ts.data1, model.fit = fit$model.fit)$frc.out
+```
+
+Lead time quantiles are available for iMAPA as well. The in-sample forecasts of each aggregation level are made at the start of each bucket rather than at every period, so the cumulative errors are calculated from forecasts made at every in-sample origin, using the fitted model of each level with fixed parameters. This takes longer than for the other methods, and `paral` can be used to speed it up. The cumulative cost functions MSCE and MACE are not offered for iMAPA, as temporal aggregation already targets the demand over multiple periods.
+
+```{r imapa-lt}
+fit <- imapa(ts.data1, h = 3, maximumAL = 12, probs = c(0.9, 0.95))
+fit$lt$quantile
+plot(fit, view = "leadtime")
+```
+
+## Forecasting many series
+
+`data.frc()` applies any of the methods to all columns of a data frame or matrix and collects the forecasts. Additional arguments are passed to the chosen method. With `method = "auto"`, each series is forecast with Croston, SBA, or SES, according to its PKa classification.
+
+```{r datafrc}
+out <- data.frc(dataset, method = "crost", type = "sba", h = 6)
+out$frc.out[, 1:3]
+```
+
+When `probs` is provided, the quantiles of the demand over the lead time of all series are collected in `lt.out`. Series that cannot be classified with `method = "auto"`, because they have fewer than two non-zero values, are forecast with SES.
+
+```{r datafrc-lt}
+out <- data.frc(dataset, method = "auto", h = 3, probs = c(0.9, 0.95))
+out$lt.out[, 1:3]
+```
+
+## References
+
+Croston, J. D. (1972). Forecasting and stock control for intermittent demands. *Operational Research Quarterly*, 23(3), 289--303.
+
+Kourentzes, N. (2014). On intermittent demand model optimisation and selection. *International Journal of Production Economics*, 156, 180--190. doi:10.1016/j.ijpe.2014.06.007
+
+Petropoulos, F., and Kourentzes, N. (2015). Forecast combinations for intermittent demand. *Journal of the Operational Research Society*, 66(6), 914--924. doi:10.1057/jors.2014.62
+
+Svetunkov, I., Kourentzes, N., and Killick, R. (2024). Multi-step estimators and shrinkage effect in time series models. *Computational Statistics*, 39(3), 1203--1239. doi:10.1007/s00180-023-01377-x
+
+Saoud, P., Kourentzes, N., and Boylan, J. E. (2022). Approximations for the lead time variance: A forecasting and inventory evaluation. *Omega*, 110, 102614. doi:10.1016/j.omega.2022.102614
+
+Teunter, R. H., and Duncan, L. (2009). Forecasting intermittent demand: a comparative study. *Journal of the Operational Research Society*, 60, 321--329.
+
+Teunter, R. H., Syntetos, A. A., and Babai, M. Z. (2011). Intermittent demand: linking forecasting to inventory obsolescence. *European Journal of Operational Research*, 214(3), 606--615.
+
+Wallström, P., and Segerstedt, A. (2010). Evaluation of forecasting error measurements and techniques for intermittent demand. *International Journal of Production Economics*, 128(2), 625--636.
